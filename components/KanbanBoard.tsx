@@ -20,17 +20,13 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Task, TaskPriority, Project, KanbanColumn } from '../types';
+import { Task, TaskStatus, TaskPriority, Project } from '../types';
 
 interface KanbanBoardProps {
   tasks: Task[];
   projects: Project[];
-  columns: KanbanColumn[];
   onSelect: (id: string) => void;
-  onMoveTask: (activeId: string, overId: string, newStatus?: string) => void;
-  onAddColumn: (title: string, color: string) => void;
-  onUpdateColumn: (id: string, title: string) => void;
-  onDeleteColumn: (id: string) => void;
+  onMoveTask: (activeId: string, overId: string, newStatus?: TaskStatus) => void;
 }
 
 const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project, onClick: () => void }) => {
@@ -72,7 +68,7 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
     >
       <div className="flex flex-col space-y-3 pointer-events-none">
         <div className="flex items-start justify-between">
-          <h4 className={`text-sm font-bold text-slate-900 leading-tight ${task.status === 'done' ? 'line-through opacity-50' : ''}`}>
+          <h4 className={`text-sm font-bold text-slate-900 leading-tight ${task.status === TaskStatus.DONE ? 'line-through opacity-50' : ''}`}>
             {task.title}
           </h4>
         </div>
@@ -105,71 +101,33 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
   );
 };
 
-const KanbanColumnComponent = ({ 
-  column, 
-  tasks, 
-  projects, 
-  onSelect, 
-  onUpdateColumn, 
-  onDeleteColumn 
-}: { 
-  column: KanbanColumn, 
-  tasks: Task[], 
-  projects: Project[], 
-  onSelect: (id: string) => void,
-  onUpdateColumn: (id: string, title: string) => void,
-  onDeleteColumn: (id: string) => void
-}) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(column.title);
-
+const KanbanColumn = ({ status, tasks, projects, onSelect }: { status: TaskStatus, tasks: Task[], projects: Project[], onSelect: (id: string) => void }) => {
   const { setNodeRef } = useSortable({
-    id: column.id,
-    data: { type: 'Column', status: column.id }
+    id: status,
+    data: { type: 'Column', status }
   });
 
-  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks]);
-
-  const handleUpdate = () => {
-    if (editTitle.trim()) {
-      onUpdateColumn(column.id, editTitle.trim());
-      setIsEditing(false);
+  const getStatusLabel = (status: TaskStatus) => {
+    switch (status) {
+      case TaskStatus.TODO: return 'To Do';
+      case TaskStatus.IN_PROGRESS: return 'In Progress';
+      case TaskStatus.DONE: return 'Done';
     }
   };
 
+  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks]);
+
   return (
     <div className="flex flex-col w-80 min-w-[20rem] h-full bg-slate-50/50 rounded-2xl border border-slate-100 p-4">
-      <div className="flex items-center justify-between mb-4 px-2 group">
-        <div className="flex items-center flex-1 min-w-0">
-          <span className="w-2 h-2 rounded-full mr-2 flex-shrink-0" style={{ backgroundColor: column.color || '#94A3B8' }}></span>
-          {isEditing ? (
-            <input 
-              autoFocus
-              className="bg-white border border-slate-200 text-xs font-bold text-slate-900 uppercase tracking-widest px-2 py-0.5 rounded outline-none w-full"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onBlur={handleUpdate}
-              onKeyDown={(e) => e.key === 'Enter' && handleUpdate()}
-            />
-          ) : (
-            <h3 
-              className="text-xs font-bold text-slate-500 uppercase tracking-widest truncate cursor-pointer hover:text-slate-900 transition-colors"
-              onClick={() => !column.isDefault && setIsEditing(true)}
-            >
-              {column.title}
-            </h3>
-          )}
+      <div className="flex items-center justify-between mb-4 px-2">
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center">
+          <span className={`w-2 h-2 rounded-full mr-2 ${
+            status === TaskStatus.TODO ? 'bg-slate-400' :
+            status === TaskStatus.IN_PROGRESS ? 'bg-blue-500' : 'bg-emerald-500'
+          }`}></span>
+          {getStatusLabel(status)}
           <span className="ml-2 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded text-[10px] font-bold">{tasks.length}</span>
-        </div>
-        
-        {!column.isDefault && !isEditing && (
-          <button 
-            onClick={() => onDeleteColumn(column.id)}
-            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all rounded-md hover:bg-slate-200"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          </button>
-        )}
+        </h3>
       </div>
       
       <div ref={setNodeRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-[150px]">
@@ -188,30 +146,21 @@ const KanbanColumnComponent = ({
   );
 };
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ 
-  tasks, 
-  projects, 
-  columns, 
-  onSelect, 
-  onMoveTask, 
-  onAddColumn,
-  onUpdateColumn,
-  onDeleteColumn
-}) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, onMoveTask }) => {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [isAddingColumn, setIsAddingColumn] = useState(false);
-  const [newColumnTitle, setNewColumnTitle] = useState('');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 8, // Increased for stability
       },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const columns = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE];
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -237,17 +186,21 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     const activeTaskData = active.data.current?.task as Task;
 
+    // Moving a task over another task
     if (isOverTask) {
       const overTaskData = over.data.current?.task as Task;
       if (activeTaskData.status !== overTaskData.status) {
+        // CROSS COLUMN MOVE
         onMoveTask(activeId, overId, overTaskData.status);
       } else {
+        // SAME COLUMN REORDER
         onMoveTask(activeId, overId);
       }
     }
 
+    // Moving a task over an empty column
     if (isOverColumn) {
-      const overStatus = over.data.current?.status as string;
+      const overStatus = over.data.current?.status as TaskStatus;
       if (activeTaskData.status !== overStatus) {
         onMoveTask(activeId, overId, overStatus);
       }
@@ -258,72 +211,25 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setActiveTask(null);
   };
 
-  const handleCreateColumn = () => {
-    if (newColumnTitle.trim()) {
-      onAddColumn(newColumnTitle.trim(), '#64748B');
-      setNewColumnTitle('');
-      setIsAddingColumn(false);
-    }
-  };
-
   return (
     <div className="flex-1 overflow-x-auto h-full p-6">
       <DndContext
         sensors={sensors}
-        collisionDetection={rectIntersection}
+        collisionDetection={rectIntersection} // More reliable for vertical columns
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <div className="flex space-x-6 h-full pb-4">
-          {columns.map(col => (
-            <KanbanColumnComponent 
-              key={col.id} 
-              column={col} 
-              tasks={tasks.filter(t => t.status === col.id)}
+          {columns.map(status => (
+            <KanbanColumn 
+              key={status} 
+              status={status} 
+              tasks={tasks.filter(t => t.status === status)}
               projects={projects}
               onSelect={onSelect}
-              onUpdateColumn={onUpdateColumn}
-              onDeleteColumn={onDeleteColumn}
             />
           ))}
-          
-          <div className="flex flex-col w-80 min-w-[20rem] h-fit">
-            {isAddingColumn ? (
-              <div className="bg-white border-2 border-slate-200 border-dashed rounded-2xl p-4 space-y-3 shadow-sm">
-                <input 
-                  autoFocus
-                  placeholder="Column name..."
-                  className="w-full text-sm font-bold text-slate-900 border border-slate-200 bg-white rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder-slate-400"
-                  value={newColumnTitle}
-                  onChange={(e) => setNewColumnTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreateColumn()}
-                />
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={handleCreateColumn}
-                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 rounded-xl transition-colors shadow-sm"
-                  >
-                    Add
-                  </button>
-                  <button 
-                    onClick={() => setIsAddingColumn(false)}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 rounded-xl transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button 
-                onClick={() => setIsAddingColumn(true)}
-                className="group flex items-center justify-center space-x-2 py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-all"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
-                <span className="text-sm font-bold">Add Column</span>
-              </button>
-            )}
-          </div>
         </div>
         
         <DragOverlay dropAnimation={{
@@ -340,7 +246,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <h4 className="text-sm font-bold text-slate-900">{activeTask.title}</h4>
               <div className="mt-2 flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  {columns.find(c => c.id === activeTask.status)?.title || activeTask.status}
+                  {activeTask.status}
                 </span>
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
               </div>

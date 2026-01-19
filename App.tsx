@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Task, TaskStatus, TaskPriority, Project, ViewMode, UserSettings, Workspace, KanbanColumn } from './types';
+import { Task, TaskStatus, TaskPriority, Project, ViewMode, UserSettings, Workspace } from './types';
 import Sidebar from './components/Sidebar';
 import TaskTable from './components/TaskTable';
 import TaskDrawer from './components/TaskDrawer';
@@ -12,8 +12,6 @@ const App: React.FC = () => {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
-  
   const [settings, setSettings] = useState<UserSettings>({
     userName: 'Erasmus Mensah',
     userEmail: 'erasmus@attio.design',
@@ -39,12 +37,6 @@ const App: React.FC = () => {
       { id: 'p1', name: 'Product Launch', color: '#3B82F6', createdAt: today, workspaceId: 'w1' },
       { id: 'p2', name: 'Internal Audit', color: '#EF4444', createdAt: today, workspaceId: 'w1' },
       { id: 'p3', name: 'Gaming', color: '#10B981', createdAt: today, workspaceId: 'w2' },
-    ];
-
-    const initialColumns: KanbanColumn[] = [
-      { id: TaskStatus.TODO, title: 'To Do', isDefault: true, color: '#94A3B8' },
-      { id: TaskStatus.IN_PROGRESS, title: 'In Progress', isDefault: true, color: '#3B82F6' },
-      { id: TaskStatus.DONE, title: 'Done', isDefault: true, color: '#10B981' },
     ];
 
     const initialTasks: Task[] = [
@@ -77,8 +69,12 @@ const App: React.FC = () => {
     setActiveWorkspaceId('w1');
     setProjects(initialProjects);
     setTasks(initialTasks);
-    setKanbanColumns(initialColumns);
   }, []);
+
+  const currentWorkspace = useMemo(() => 
+    workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0],
+    [workspaces, activeWorkspaceId]
+  );
 
   const filteredProjects = useMemo(() => 
     projects.filter(p => p.workspaceId === activeWorkspaceId),
@@ -123,7 +119,7 @@ const App: React.FC = () => {
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   };
 
-  const handleMoveTask = useCallback((activeId: string, overId: string, newStatus?: string) => {
+  const handleMoveTask = useCallback((activeId: string, overId: string, newStatus?: TaskStatus) => {
     setTasks((prev) => {
       const activeIndex = prev.findIndex((t) => t.id === activeId);
       const overIndex = prev.findIndex((t) => t.id === overId);
@@ -197,29 +193,6 @@ const App: React.FC = () => {
       const remaining = workspaces.find(w => w.id !== id);
       if (remaining) setActiveWorkspaceId(remaining.id);
     }
-  };
-
-  const handleAddColumn = (title: string, color: string) => {
-    const newColumn: KanbanColumn = {
-      id: Math.random().toString(36).substr(2, 9),
-      title,
-      isDefault: false,
-      color
-    };
-    setKanbanColumns(prev => [...prev, newColumn]);
-  };
-
-  const handleUpdateColumn = (id: string, title: string) => {
-    setKanbanColumns(prev => prev.map(c => c.id === id && !c.isDefault ? { ...c, title } : c));
-  };
-
-  const handleDeleteColumn = (id: string) => {
-    const col = kanbanColumns.find(c => c.id === id);
-    if (!col || col.isDefault) return;
-    
-    setKanbanColumns(prev => prev.filter(c => c.id !== id));
-    // Move tasks from deleted column back to TODO or leave as is? Let's move to TODO.
-    setTasks(prev => prev.map(t => t.status === id ? { ...t, status: TaskStatus.TODO } : t));
   };
 
   const handleResetData = () => {
@@ -304,7 +277,6 @@ const App: React.FC = () => {
             <TaskTable 
               tasks={filteredTasks} 
               projects={filteredProjects}
-              kanbanColumns={kanbanColumns}
               selectedId={selectedTaskId} 
               onSelect={setSelectedTaskId} 
             />
@@ -312,12 +284,8 @@ const App: React.FC = () => {
             <KanbanBoard 
               tasks={filteredTasks} 
               projects={filteredProjects} 
-              columns={kanbanColumns}
               onSelect={setSelectedTaskId}
               onMoveTask={handleMoveTask}
-              onAddColumn={handleAddColumn}
-              onUpdateColumn={handleUpdateColumn}
-              onDeleteColumn={handleDeleteColumn}
             />
           )}
         </div>
@@ -356,7 +324,6 @@ const App: React.FC = () => {
       <TaskDrawer 
         task={selectedTask} 
         projects={filteredProjects}
-        columns={kanbanColumns}
         onClose={() => setSelectedTaskId(null)} 
         onUpdate={handleUpdateTask}
         onDelete={handleDeleteTask}
