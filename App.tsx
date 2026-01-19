@@ -74,6 +74,21 @@ const App: React.FC = () => {
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   };
 
+  const handleReorderTasks = (activeId: string, overId: string) => {
+    setTasks((prev) => {
+      const activeIndex = prev.findIndex((t) => t.id === activeId);
+      const overIndex = prev.findIndex((t) => t.id === overId);
+      
+      if (activeIndex !== -1 && overIndex !== -1) {
+        const newTasks = [...prev];
+        const [removed] = newTasks.splice(activeIndex, 1);
+        newTasks.splice(overIndex, 0, removed);
+        return newTasks;
+      }
+      return prev;
+    });
+  };
+
   const handleDeleteTask = (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
     if (selectedTaskId === id) setSelectedTaskId(null);
@@ -196,6 +211,7 @@ const App: React.FC = () => {
               projects={projects} 
               onSelect={setSelectedTaskId}
               onUpdateTask={handleUpdateTask}
+              onReorderTasks={handleReorderTasks}
             />
           )}
         </div>

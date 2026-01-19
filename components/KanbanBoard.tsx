@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   DndContext,
   closestCorners,
@@ -14,20 +14,20 @@ import {
   DragStartEvent
 } from '@dnd-kit/core';
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Task, TaskStatus, TaskPriority, Project, ViewMode } from '../types';
+import { Task, TaskStatus, TaskPriority, Project } from '../types';
 
 interface KanbanBoardProps {
   tasks: Task[];
   projects: Project[];
   onSelect: (id: string) => void;
   onUpdateTask: (task: Task) => void;
+  onReorderTasks: (activeId: string, overId: string) => void;
 }
 
 const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project, onClick: () => void }) => {
@@ -43,7 +43,7 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.3 : 1,
   };
 
   const getPriorityColor = (priority: TaskPriority) => {
@@ -55,16 +55,24 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
     }
   };
 
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // We don't want the click to trigger immediately if we're intending to drag
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      onClick={onClick}
-      className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing mb-3 group ${isDragging ? 'z-50' : ''}`}
+      onPointerDown={handlePointerDown}
+      onClick={(e) => {
+        // dnd-kit normally stops propagation if a drag occurred
+        onClick();
+      }}
+      className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing mb-3 group ${isDragging ? 'z-50 ring-2 ring-blue-500 border-transparent shadow-xl' : ''}`}
     >
-      <div className="flex flex-col space-y-3">
+      <div className="flex flex-col space-y-3 pointer-events-none">
         <div className="flex items-start justify-between">
           <h4 className={`text-sm font-bold text-slate-900 leading-tight ${task.status === TaskStatus.DONE ? 'line-through opacity-50' : ''}`}>
             {task.title}
@@ -113,6 +121,8 @@ const KanbanColumn = ({ status, tasks, projects, onSelect }: { status: TaskStatu
     }
   };
 
+  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks]);
+
   return (
     <div className="flex flex-col w-80 min-w-[20rem] h-full bg-slate-50/50 rounded-2xl border border-slate-100 p-4">
       <div className="flex items-center justify-between mb-4 px-2">
@@ -126,8 +136,8 @@ const KanbanColumn = ({ status, tasks, projects, onSelect }: { status: TaskStatu
         </h3>
       </div>
       
-      <div ref={setNodeRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-[100px]">
-        <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-[150px]">
+        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
           {tasks.map(task => (
             <KanbanCard 
               key={task.id} 
@@ -142,13 +152,13 @@ const KanbanColumn = ({ status, tasks, projects, onSelect }: { status: TaskStatu
   );
 };
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, onUpdateTask }) => {
-  const [activeTask, setActiveTask] = React.useState<Task | null>(null);
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, onUpdateTask, onReorderTasks }) => {
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -159,8 +169,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
   const columns = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.DONE];
 
   const handleDragStart = (event: DragStartEvent) => {
-    if (event.active.data.current?.type === 'Task') {
-      setActiveTask(event.active.data.current.task);
+    const { active } = event;
+    if (active.data.current?.type === 'Task') {
+      setActiveTask(active.data.current.task);
     }
   };
 
@@ -168,8 +179,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
     const { active, over } = event;
     if (!over) return;
 
-    const activeId = active.id;
-    const overId = over.id;
+    const activeId = active.id as string;
+    const overId = over.id as string;
 
     if (activeId === overId) return;
 
@@ -179,33 +190,38 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
 
     if (!isActiveTask) return;
 
-    // Moving a task over another task
-    if (isOverTask) {
-      const activeTask = active.data.current?.task as Task;
-      const overTask = over.data.current?.task as Task;
+    const activeTaskData = active.data.current?.task as Task;
 
-      if (activeTask.status !== overTask.status) {
-        onUpdateTask({ ...activeTask, status: overTask.status });
+    // Moving a task over another task in a DIFFERENT column
+    if (isOverTask) {
+      const overTaskData = over.data.current?.task as Task;
+      if (activeTaskData.status !== overTaskData.status) {
+        onUpdateTask({ ...activeTaskData, status: overTaskData.status });
       }
     }
 
-    // Moving a task over a column
+    // Moving a task over an EMPTY column
     if (isOverColumn) {
-      const activeTask = active.data.current?.task as Task;
       const overStatus = over.data.current?.status as TaskStatus;
-
-      if (activeTask.status !== overStatus) {
-        onUpdateTask({ ...activeTask, status: overStatus });
+      if (activeTaskData.status !== overStatus) {
+        onUpdateTask({ ...activeTaskData, status: overStatus });
       }
     }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    setActiveTask(null);
     const { active, over } = event;
+    setActiveTask(null);
+
     if (!over) return;
-    
-    // Additional logic if sorting within the same column is needed
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Handle sorting within the same column or final drop position
+    if (activeId !== overId) {
+      onReorderTasks(activeId, overId);
+    }
   };
 
   return (
@@ -233,16 +249,21 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
           sideEffects: defaultDropAnimationSideEffects({
             styles: {
               active: {
-                opacity: '0.5',
+                opacity: '0.4',
               },
             },
           }),
         }}>
           {activeTask ? (
-            <div className="bg-white border-2 border-blue-500 rounded-xl p-4 shadow-xl cursor-grabbing rotate-3">
+            <div className="bg-white border-2 border-blue-500 rounded-xl p-4 shadow-2xl cursor-grabbing scale-105 opacity-90">
               <h4 className="text-sm font-bold text-slate-900">{activeTask.title}</h4>
-              <div className="mt-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                {activeTask.status}
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  {activeTask.status}
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  Dragging...
+                </span>
               </div>
             </div>
           ) : null}
