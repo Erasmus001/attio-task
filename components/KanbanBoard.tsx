@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   DndContext,
-  closestCorners,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -26,8 +26,7 @@ interface KanbanBoardProps {
   tasks: Task[];
   projects: Project[];
   onSelect: (id: string) => void;
-  onUpdateTask: (task: Task) => void;
-  onReorderTasks: (activeId: string, overId: string) => void;
+  onMoveTask: (activeId: string, overId: string, newStatus?: TaskStatus) => void;
 }
 
 const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project, onClick: () => void }) => {
@@ -38,7 +37,10 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
     transform,
     transition,
     isDragging
-  } = useSortable({ id: task.id, data: { type: 'Task', task } });
+  } = useSortable({ 
+    id: task.id, 
+    data: { type: 'Task', task } 
+  });
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -55,21 +57,13 @@ const KanbanCard = ({ task, project, onClick }: { task: Task, project?: Project,
     }
   };
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    // We don't want the click to trigger immediately if we're intending to drag
-  };
-
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      onPointerDown={handlePointerDown}
-      onClick={(e) => {
-        // dnd-kit normally stops propagation if a drag occurred
-        onClick();
-      }}
+      onClick={onClick}
       className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing mb-3 group ${isDragging ? 'z-50 ring-2 ring-blue-500 border-transparent shadow-xl' : ''}`}
     >
       <div className="flex flex-col space-y-3 pointer-events-none">
@@ -152,13 +146,13 @@ const KanbanColumn = ({ status, tasks, projects, onSelect }: { status: TaskStatu
   );
 };
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, onUpdateTask, onReorderTasks }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, onMoveTask }) => {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5,
+        distance: 8, // Increased for stability
       },
     }),
     useSensor(KeyboardSensor, {
@@ -192,43 +186,36 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
 
     const activeTaskData = active.data.current?.task as Task;
 
-    // Moving a task over another task in a DIFFERENT column
+    // Moving a task over another task
     if (isOverTask) {
       const overTaskData = over.data.current?.task as Task;
       if (activeTaskData.status !== overTaskData.status) {
-        onUpdateTask({ ...activeTaskData, status: overTaskData.status });
+        // CROSS COLUMN MOVE
+        onMoveTask(activeId, overId, overTaskData.status);
+      } else {
+        // SAME COLUMN REORDER
+        onMoveTask(activeId, overId);
       }
     }
 
-    // Moving a task over an EMPTY column
+    // Moving a task over an empty column
     if (isOverColumn) {
       const overStatus = over.data.current?.status as TaskStatus;
       if (activeTaskData.status !== overStatus) {
-        onUpdateTask({ ...activeTaskData, status: overStatus });
+        onMoveTask(activeId, overId, overStatus);
       }
     }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
     setActiveTask(null);
-
-    if (!over) return;
-
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    // Handle sorting within the same column or final drop position
-    if (activeId !== overId) {
-      onReorderTasks(activeId, overId);
-    }
   };
 
   return (
     <div className="flex-1 overflow-x-auto h-full p-6">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={rectIntersection} // More reliable for vertical columns
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
@@ -261,9 +248,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, projects, onSelect, on
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                   {activeTask.status}
                 </span>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  Dragging...
-                </span>
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
               </div>
             </div>
           ) : null}

@@ -13,7 +13,15 @@ export enum TaskPriority {
 
 export enum ViewMode {
   LIST = 'list',
-  KANBAN = 'kanban'
+  KANBAN = 'kanban',
+  SETTINGS = 'settings'
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
 }
 
 export interface Project {
@@ -21,6 +29,7 @@ export interface Project {
   name: string;
   color: string;
   createdAt: string;
+  workspaceId: string;
 }
 
 export interface SubTask {
@@ -41,7 +50,16 @@ export interface Task {
   dueDate: string;
   createdAt: string;
   projectId?: string;
+  workspaceId: string;
   subTasks?: SubTask[];
+}
+
+export interface UserSettings {
+  userName: string;
+  userEmail: string;
+  defaultPriority: TaskPriority;
+  enableAISummaries: boolean;
+  theme: 'light' | 'dark' | 'system';
 }
 
 export interface AIResponse {
