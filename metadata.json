@@ -1,0 +1,5 @@
+{
+  "name": "AttioTask",
+  "description": "A high-performance, clean, and collaborative-feeling task manager inspired by Attio's design system, featuring AI-powered task refinement.",
+  "requestFramePermissions": []
+}
