@@ -1,15 +1,16 @@
 
 import React from 'react';
-import { Task, TaskStatus, TaskPriority, Project } from '../types';
+import { Task, TaskPriority, Project, KanbanColumn } from '../types';
 
 interface TaskTableProps {
   tasks: Task[];
   projects: Project[];
+  kanbanColumns: KanbanColumn[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }
 
-const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, selectedId, onSelect }) => {
+const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, kanbanColumns, selectedId, onSelect }) => {
   const getPriorityColor = (priority: TaskPriority) => {
     switch (priority) {
       case TaskPriority.HIGH: return 'bg-red-50 text-red-700 border-red-100';
@@ -19,13 +20,16 @@ const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, selectedId, onSe
     }
   };
 
-  const getStatusColor = (status: TaskStatus) => {
-    switch (status) {
-      case TaskStatus.DONE: return 'bg-emerald-50 text-emerald-700 border-emerald-100';
-      case TaskStatus.IN_PROGRESS: return 'bg-blue-50 text-blue-700 border-blue-100';
-      case TaskStatus.TODO: return 'bg-slate-50 text-slate-700 border-slate-100';
-      default: return 'bg-slate-50 text-slate-700 border-slate-100';
-    }
+  const getStatusColor = (statusId: string) => {
+    const col = kanbanColumns.find(c => c.id === statusId);
+    if (!col) return 'bg-slate-50 text-slate-700 border-slate-100';
+    
+    // Default logic based on specific IDs if possible, else generic
+    if (statusId === 'done') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+    if (statusId === 'in-progress') return 'bg-blue-50 text-blue-700 border-blue-100';
+    if (statusId === 'todo') return 'bg-slate-50 text-slate-700 border-slate-100';
+
+    return 'bg-slate-50 text-slate-600 border-slate-200';
   };
 
   if (tasks.length === 0) {
@@ -51,6 +55,7 @@ const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, selectedId, onSe
       <tbody className="bg-white divide-y divide-slate-100">
         {tasks.map((task) => {
           const project = projects.find(p => p.id === task.projectId);
+          const col = kanbanColumns.find(c => c.id === task.status);
           return (
             <tr 
               key={task.id} 
@@ -61,7 +66,7 @@ const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, selectedId, onSe
             >
               <td className="px-6 py-4">
                 <div className="flex flex-col">
-                  <span className={`text-sm font-medium ${task.status === TaskStatus.DONE ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                  <span className={`text-sm font-medium ${task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
                     {task.title}
                   </span>
                   <span className="text-xs text-slate-500 truncate max-w-md">{task.description}</span>
@@ -78,8 +83,8 @@ const TaskTable: React.FC<TaskTableProps> = ({ tasks, projects, selectedId, onSe
                 )}
               </td>
               <td className="px-6 py-4">
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(task.status)}`}>
-                  {task.status}
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border truncate max-w-[100px] inline-block ${getStatusColor(task.status)}`}>
+                  {col?.title || task.status}
                 </span>
               </td>
               <td className="px-6 py-4">

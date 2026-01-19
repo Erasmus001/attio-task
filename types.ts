@@ -17,6 +17,13 @@ export enum ViewMode {
   SETTINGS = 'settings'
 }
 
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  isDefault: boolean;
+  color?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -45,7 +52,7 @@ export interface Task {
   title: string;
   description: string;
   summary?: string;
-  status: TaskStatus;
+  status: string; // Changed from TaskStatus to string to support dynamic columns
   priority: TaskPriority;
   dueDate: string;
   createdAt: string;
