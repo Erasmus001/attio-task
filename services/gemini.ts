@@ -2,12 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { TaskPriority, AIResponse } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+// Always use named parameter and process.env.API_KEY directly per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const refineTask = async (title: string): Promise<AIResponse | null> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // Use the recommended model for basic text tasks
+      model: "gemini-3-flash-preview",
       contents: `Refine this task: "${title}". Suggest a professional description, an appropriate priority (low, medium, or high), and break it down into 3 actionable sub-tasks.`,
       config: {
         responseMimeType: "application/json",
@@ -29,10 +31,11 @@ export const refineTask = async (title: string): Promise<AIResponse | null> => {
       }
     });
 
+    // Extract text directly from the response property as per the guidelines
     if (!response.text) return null;
     const data = JSON.parse(response.text.trim());
     
-    // Validate priority
+    // Validate priority enum value
     const priority = Object.values(TaskPriority).includes(data.priority as TaskPriority) 
       ? (data.priority as TaskPriority) 
       : TaskPriority.MEDIUM;
@@ -55,7 +58,7 @@ export const generateSummary = async (title: string, description: string): Promi
     Description: ${description || "No description provided."}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
         thinkingConfig: { thinkingBudget: 0 }

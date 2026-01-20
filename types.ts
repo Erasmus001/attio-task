@@ -24,6 +24,14 @@ export interface Workspace {
   color: string;
 }
 
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  isDefault: boolean;
+  color?: string;
+  workspaceId: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -45,7 +53,7 @@ export interface Task {
   title: string;
   description: string;
   summary?: string;
-  status: TaskStatus;
+  status: string; // Changed from TaskStatus to string for dynamic columns
   priority: TaskPriority;
   dueDate: string;
   createdAt: string;
