@@ -22,6 +22,16 @@ export interface Workspace {
   name: string;
   icon: string;
   color: string;
+  ownerId: string;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  workspaceId: string;
+  inviterEmail: string;
+  status: 'pending' | 'accepted';
+  createdAt: string;
 }
 
 export interface KanbanColumn {
@@ -53,7 +63,7 @@ export interface Task {
   title: string;
   description: string;
   summary?: string;
-  status: string; // Changed from TaskStatus to string for dynamic columns
+  status: string; 
   priority: TaskPriority;
   dueDate: string;
   createdAt: string;

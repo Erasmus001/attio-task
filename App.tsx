@@ -1,37 +1,57 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Task, TaskStatus, TaskPriority, Project, ViewMode, UserSettings, Workspace, KanbanColumn } from './types';
+import { Task, TaskPriority, Project, ViewMode, UserSettings, Workspace, KanbanColumn, Invitation } from './types';
 import Sidebar from './components/Sidebar';
 import TaskTable from './components/TaskTable';
 import TaskDrawer from './components/TaskDrawer';
 import KanbanBoard from './components/KanbanBoard';
 import SettingsPage from './components/SettingsPage';
 import AuthPage from './components/AuthPage';
+import OnboardingFlow from './components/OnboardingFlow';
+import InviteAcceptancePage from './components/InviteAcceptancePage';
 import { db, id } from './services/instantDb';
 
 const App: React.FC = () => {
   // 1. Authentication Hook - Always called first
   const { isLoading: authLoading, user } = db.useAuth();
 
-  // 2. Stable Query Object - Stabilizing the object reference to prevent internal hook count mismatches in libraries
+  // 2. Stable Query Object
   const query = useMemo(() => (user ? { 
     tasks: {}, 
     projects: {}, 
     workspaces: {},
-    kanbanColumns: {}
-  } : null), [user?.id]); // Use user.id for stability
+    kanbanColumns: {},
+    invitations: {}
+  } : null), [user?.id]);
 
-  // 3. Data Query Hook - Always called, reference stabilized by useMemo
+  // 3. Data Query Hook
   const { isLoading: queryLoading, data } = db.useQuery(query);
 
-  // 4. UI State Hooks - Always called
+  // 4. UI State Hooks
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<{ type: 'status' | 'project' | 'all' | 'settings', value: string }>({ type: 'all', value: 'all' });
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LIST);
+  const [inviteId, setInviteId] = useState<string | null>(null);
 
-  // 5. Settings State - Initialized safely
+  // Parse invite ID from URL hash if present
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#/invite/')) {
+        const id = hash.split('#/invite/')[1];
+        setInviteId(id);
+      } else {
+        setInviteId(null);
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  // 5. Settings State
   const [settings, setSettings] = useState<UserSettings>({
     userName: 'User',
     userEmail: '',
@@ -40,7 +60,7 @@ const App: React.FC = () => {
     theme: 'system'
   });
 
-  // 6. Effect Hooks - Always called
+  // 6. Sync User Settings
   useEffect(() => {
     if (user) {
       setSettings(prev => ({
@@ -51,37 +71,46 @@ const App: React.FC = () => {
     }
   }, [user?.email]);
 
+  // 7. Auto-select workspace logic
   useEffect(() => {
     if (queryLoading || !data || !user) return;
-    const currentWorkspaces = (data.workspaces as Workspace[]) || [];
-    if (currentWorkspaces.length === 0) {
-      const workspaceId = id();
-      const todoColId = id();
-      const inProgressColId = id();
-      const doneColId = id();
-      db.transact([
-        db.tx.workspaces[workspaceId].update({ name: 'Main Workspace', icon: '🏠', color: '#3B82F6' }),
-        db.tx.kanbanColumns[todoColId].update({ title: 'To Do', isDefault: true, color: '#94A3B8', workspaceId }),
-        db.tx.kanbanColumns[inProgressColId].update({ title: 'In Progress', isDefault: true, color: '#3B82F6', workspaceId }),
-        db.tx.kanbanColumns[doneColId].update({ title: 'Done', isDefault: true, color: '#10B981', workspaceId })
-      ]);
-      setActiveWorkspaceId(workspaceId);
-    } else if (!activeWorkspaceId || !currentWorkspaces.find(w => w.id === activeWorkspaceId)) {
-      setActiveWorkspaceId(currentWorkspaces[0].id);
+    
+    const allWorkspaces = (data.workspaces as Workspace[]) || [];
+    const allInvitations = (data.invitations as Invitation[]) || [];
+    
+    const accessibleWorkspaces = allWorkspaces.filter(w => {
+      const isOwner = w.ownerId === user.id;
+      const isInvited = allInvitations.some(inv => inv.workspaceId === w.id && inv.email === user.email && inv.status === 'accepted');
+      return isOwner || isInvited;
+    });
+
+    if (accessibleWorkspaces.length > 0 && (!activeWorkspaceId || !accessibleWorkspaces.some(w => w.id === activeWorkspaceId))) {
+      setActiveWorkspaceId(accessibleWorkspaces[0].id);
     }
   }, [queryLoading, data, activeWorkspaceId, user]);
 
-  // 7. Data Extraction
-  const workspaces = (data?.workspaces as Workspace[]) || [];
+  // 8. Data Extraction
+  const allWorkspaces = (data?.workspaces as Workspace[]) || [];
+  const allInvitations = (data?.invitations as Invitation[]) || [];
+  
+  const accessibleWorkspaces = useMemo(() => {
+    if (!user) return [];
+    return allWorkspaces.filter(w => {
+      const isOwner = w.ownerId === user.id;
+      const isInvited = allInvitations.some(inv => inv.workspaceId === w.id && inv.email === user.email && inv.status === 'accepted');
+      return isOwner || isInvited;
+    });
+  }, [allWorkspaces, allInvitations, user]);
+
   const projects = (data?.projects as Project[]) || [];
   const tasks = (data?.tasks as Task[]) || [];
   const allKanbanColumns = (data?.kanbanColumns as KanbanColumn[]) || [];
+  
   const kanbanColumns = useMemo(() => 
     allKanbanColumns.filter(c => c.workspaceId === activeWorkspaceId),
     [allKanbanColumns, activeWorkspaceId]
   );
 
-  // 8. Derived State
   const filteredProjects = useMemo(() => 
     projects.filter(p => p.workspaceId === activeWorkspaceId),
     [projects, activeWorkspaceId]
@@ -108,7 +137,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Handlers
+  // CRUD Handlers
   const handleSignOut = () => db.auth.signOut();
   const handleUpdateTask = (updatedTask: Task) => db.transact([db.tx.tasks[updatedTask.id].update(updatedTask)]);
   const handleDeleteTask = (id: string) => {
@@ -126,7 +155,7 @@ const App: React.FC = () => {
   const handleAddWorkspace = (name: string, icon: string, color: string) => {
     const workspaceId = id();
     db.transact([
-      db.tx.workspaces[workspaceId].update({ name, icon, color }),
+      db.tx.workspaces[workspaceId].update({ name, icon, color, ownerId: user?.id }),
       db.tx.kanbanColumns[id()].update({ title: 'To Do', isDefault: true, color: '#94A3B8', workspaceId }),
       db.tx.kanbanColumns[id()].update({ title: 'In Progress', isDefault: true, color: '#3B82F6', workspaceId }),
       db.tx.kanbanColumns[id()].update({ title: 'Done', isDefault: true, color: '#10B981', workspaceId })
@@ -135,12 +164,9 @@ const App: React.FC = () => {
   };
   const handleUpdateWorkspace = (workspaceId: string, name: string, icon: string, color: string) => db.transact([db.tx.workspaces[workspaceId].update({ name, icon, color })]);
   const handleDeleteWorkspace = (workspaceId: string) => {
-    if (workspaces.length <= 1) return;
-    const relatedProjects = projects.filter(p => p.workspaceId === workspaceId);
-    const relatedTasks = tasks.filter(t => t.workspaceId === workspaceId);
-    const relatedCols = allKanbanColumns.filter(c => c.workspaceId === workspaceId);
-    db.transact([db.tx.workspaces[workspaceId].delete(), ...relatedProjects.map(p => db.tx.projects[p.id].delete()), ...relatedTasks.map(t => db.tx.tasks[t.id].delete()), ...relatedCols.map(c => db.tx.kanbanColumns[c.id].delete())]);
-    if (activeWorkspaceId === workspaceId) setActiveWorkspaceId(workspaces.find(w => w.id !== workspaceId)?.id || '');
+    if (accessibleWorkspaces.length <= 1) return;
+    db.transact([db.tx.workspaces[workspaceId].delete()]);
+    if (activeWorkspaceId === workspaceId) setActiveWorkspaceId(accessibleWorkspaces.find(w => w.id !== workspaceId)?.id || '');
   };
   const handleAddColumn = (title: string, color: string) => db.transact([db.tx.kanbanColumns[id()].update({ title, isDefault: false, color, workspaceId: activeWorkspaceId })]);
   const handleUpdateColumn = (columnId: string, title: string) => db.transact([db.tx.kanbanColumns[columnId].update({ title })]);
@@ -174,14 +200,11 @@ const App: React.FC = () => {
     setSelectedTaskId(taskId);
   };
 
-  // 9. Final Rendering Logic - Consolidating into a single stable tree
+  // Rendering
   if (authLoading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-white">
-        <div className="flex flex-col items-center space-y-4">
-          <svg className="animate-spin h-8 w-8 text-slate-900" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Establishing Session...</span>
-        </div>
+        <svg className="animate-spin h-8 w-8 text-slate-900" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
       </div>
     );
   }
@@ -190,15 +213,26 @@ const App: React.FC = () => {
     return <AuthPage />;
   }
 
+  if (inviteId) {
+    return (
+      <InviteAcceptancePage 
+        inviteId={inviteId} 
+        userEmail={user.email} 
+        onComplete={(wsId) => { window.location.hash = ''; setInviteId(null); setActiveWorkspaceId(wsId); }} 
+      />
+    );
+  }
+
   if (queryLoading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-white">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="flex space-x-2"><div className="w-2 h-2 bg-slate-900 rounded-full animate-bounce [animation-delay:-0.3s]"></div><div className="w-2 h-2 bg-slate-900 rounded-full animate-bounce [animation-delay:-0.15s]"></div><div className="w-2 h-2 bg-slate-900 rounded-full animate-bounce"></div></div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Syncing Cloud Workspace...</span>
-        </div>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Syncing Cloud...</span>
       </div>
     );
+  }
+
+  if (accessibleWorkspaces.length === 0) {
+    return <OnboardingFlow userEmail={user.email} userId={user.id} onComplete={(wsId) => setActiveWorkspaceId(wsId)} />;
   }
 
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || null;
@@ -215,7 +249,7 @@ const App: React.FC = () => {
         onDeleteProject={handleDeleteProject}
         userName={settings.userName}
         userEmail={settings.userEmail}
-        workspaces={workspaces}
+        workspaces={accessibleWorkspaces}
         activeWorkspaceId={activeWorkspaceId}
         onSwitchWorkspace={setActiveWorkspaceId}
         onAddWorkspace={handleAddWorkspace}
@@ -229,6 +263,8 @@ const App: React.FC = () => {
           <SettingsPage 
             projects={filteredProjects}
             settings={settings}
+            activeWorkspaceId={activeWorkspaceId}
+            invitations={allInvitations}
             onUpdateSettings={setSettings}
             onDeleteProject={handleDeleteProject}
             onUpdateProject={handleUpdateProject}
@@ -249,10 +285,10 @@ const App: React.FC = () => {
                   </span>
                   <input 
                     type="text" 
-                    placeholder="Search everything..." 
+                    placeholder="Search tasks..." 
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="block w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-[13px] font-medium transition-all shadow-sm"
+                    className="block w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 text-[13px] font-medium transition-all shadow-sm"
                   />
                 </div>
               </div>

@@ -1,5 +1,5 @@
 {
   "name": "AttioTask",
-  "description": "A high-performance, clean, and collaborative-feeling task manager with secure Magic Code authentication, real-time persistence via InstantDB, and AI-powered task refinement.",
+  "description": "High-performance task manager with collaborative workspaces, magic-link onboarding, and AI-powered task refinement.",
   "requestFramePermissions": []
 }
